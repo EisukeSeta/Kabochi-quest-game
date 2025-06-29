@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>かぼちクエストⅠ - ジャンプの章</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        body { margin: 0; padding: 0; overflow: hidden; background: #000; font-family: 'Meiryo', 'MS PGothic', sans-serif; }
+        #gameContainer { width: 100vw; height: 100vh; position: relative; cursor: move; }
+        #instructions { position: absolute; top: 20px; left: 20px; color: white; background: rgba(0, 0, 0, 0.8); padding: 15px; border-radius: 10px; font-size: 14px; z-index: 100; border: 2px solid #FFD700; line-height: 1.6; }
+        #stats { position: absolute; top: 20px; right: 20px; color: white; background: rgba(0, 0, 0, 0.8); padding: 15px; border-radius: 10px; font-size: 14px; z-index: 100; border: 2px solid #FFD700; width: 180px; line-height: 1.6; }
+        #gameTitle { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #FFD700; font-size: 64px; font-weight: bold; text-shadow: 4px 4px 8px rgba(0,0,0,0.8); z-index: 200; opacity: 1; transition: opacity 2s ease-out 1s; text-align: center; white-space: nowrap; }
+        .fade-out { opacity: 0 !important; pointer-events: none; }
+        #audioControls { position: absolute; bottom: 20px; left: 20px; z-index: 100; }
+        #audioControls button { background: rgba(0, 0, 0, 0.8); color: white; border: 2px solid #FFD700; padding: 10px 15px; border-radius: 5px; cursor: pointer; font-size: 14px; margin-right: 10px; }
+        #audioControls button:hover { background: rgba(255, 215, 0, 0.2); }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <div id="gameTitle">かぼちクエストⅠ</div>
+        <div id="instructions">
+            <strong>🗡️ 操作方法</strong><br>
+            W / ↑: 前進<br>
+            S / ↓: 後退<br>
+            A,D / ←,→: 左右に回転<br>
+            SHIFT: ダッシュ<br>
+            SPACE: ジャンプ<br> <!-- ★変更点 -->
+            マウスドラッグ: カメラ視点調整<br>
+            <strong>🎯 目的</strong><br>
+            • スライムに触れて仲間にしよう！<br>
+            • 仲間は数珠繋ぎで追従します。
+        </div>
+        <div id="stats">
+            <div>座標: <span id="position">0, 0, 0</span></div>
+            <div>発見スライム: <span id="totalSlimes">0</span></div>
+            <div>仲間スライム: <span id="followingSlimes">0</span></div>
+            <div>探索距離: <span id="distance">0.0</span> m</div>
+        </div>
+        <div id="audioControls">
+            <button id="bgmBtn">🎵 BGM ON</button>
+            <button id="sfxBtn">🔊 SFX ON</button>
+        </div>
+    </div>
+
+    <script>
+        // --- オーディオ関連の変数 ---
+        let audioContext;
+        let bgmGain, sfxGain;
+        let isBGMPlaying = false, isSFXEnabled = true;
+        let melodyTimeoutId, bassTimeoutId;
+        let bgmOscillators = [];
+
+        // --- ゲーム関連の変数 ---
+        let scene, camera, renderer, player;
+        let keys = {};
+        const slimes = [], followingSlimes = []; 
+        let totalDistance = 0;
+        let lastPosition = new THREE.Vector3();
+        const clock = new THREE.Clock();
+        let cameraAngleY = 0, cameraAngleX = 0.4;
+        const cameraDistance = 8;
+        
+        // ★変更点: ジャンプ機能のための物理変数
+        let playerVelocityY = 0;
+        let isPlayerOnGround = true;
+        const JUMP_FORCE = 10.0;
+        const GRAVITY = -30.0;
+        const GROUND_Y = 0.1;
+
+        // BGMデータ (省略)
+        const notes = { 'C2': 65.41, 'D2': 73.42, 'E2': 82.41, 'F2': 87.31, 'G2': 98.00, 'A2': 110.00, 'B2': 123.47, 'C3': 130.81, 'D3': 146.83, 'E3': 164.81, 'F3': 174.61, 'G3': 196.00, 'A3': 220.00, 'B3': 246.94, 'C4': 261.63, 'D4': 293.66, 'E4': 329.63, 'F4': 349.23, 'G4': 392.00, 'A4': 440.00, 'B4': 493.88, 'C5': 523.25, 'D5': 587.33, 'E5': 659.25, 'F5': 698.46, 'G5': 783.99, 'A5': 880.00, 'B5': 987.77, 'C6': 1046.50, 'D6': 1174.66, 'E6': 1318.51, 'REST': 0 };
+        const originalMelody = [ { note: 'C4', duration: 1.0 }, { note: 'E4', duration: 0.5 }, { note: 'G4', duration: 0.5 }, { note: 'C5', duration: 1.5 }, { note: 'REST', duration: 0.25 }, { note: 'B4', duration: 0.5 }, { note: 'A4', duration: 0.5 }, { note: 'G4', duration: 1.0 }, { note: 'REST', duration: 0.5 }, { note: 'E4', duration: 0.75 }, { note: 'F4', duration: 0.25 }, { note: 'G4', duration: 0.5 }, { note: 'A4', duration: 0.5 }, { note: 'B4', duration: 0.75 }, { note: 'C5', duration: 0.25 }, { note: 'D5', duration: 1.0 }, { note: 'REST', duration: 0.25 }, { note: 'C5', duration: 0.5 }, { note: 'B4', duration: 0.5 }, { note: 'A4', duration: 0.75 }, { note: 'G4', duration: 0.25 }, { note: 'F4', duration: 1.25 }, { note: 'REST', duration: 0.5 }, { note: 'A3', duration: 0.5 }, { note: 'C4', duration: 0.5 }, { note: 'E4', duration: 0.75 }, { note: 'D4', duration: 0.25 }, { note: 'C4', duration: 0.5 }, { note: 'B3', duration: 0.75 }, { note: 'A3', duration: 0.25 }, { note: 'G3', duration: 1.0 }, { note: 'REST', duration: 0.25 }, { note: 'F4', duration: 0.5 }, { note: 'E4', duration: 0.5 }, { note: 'D4', duration: 1.0 }, { note: 'REST', duration: 0.5 }, { note: 'G4', duration: 0.5 }, { note: 'A4', duration: 0.5 }, { note: 'B4', duration: 0.5 }, { note: 'C5', duration: 0.75 }, { note: 'D5', duration: 0.25 }, { note: 'E5', duration: 1.0 }, { note: 'REST', duration: 0.25 }, { note: 'D5', duration: 0.5 }, { note: 'C5', duration: 0.5 }, { note: 'B4', duration: 0.5 }, { note: 'A4', duration: 0.5 }, { note: 'G4', duration: 0.75 }, { note: 'C5', duration: 0.25 }, { note: 'G4', duration: 2.0 } ];
+        const originalBassLine = [ { note: 'C2', duration: 2.0 }, { note: 'G2', duration: 2.0 }, { note: 'A2', duration: 2.0 }, { note: 'F2', duration: 2.0 }, { note: 'C3', duration: 1.5 }, { note: 'G2', duration: 1.5 }, { note: 'A2', duration: 1.5 }, { note: 'F2', duration: 1.5 }, { note: 'D2', duration: 1.5 }, { note: 'A2', duration: 2.0 }, { note: 'F2', duration: 2.0 }, { note: 'C2', duration: 2.0 }, { note: 'G2', duration: 1.5 }, { note: 'C2', duration: 1.5 }, { note: 'G2', duration: 1.5 }, { note: 'C3', duration: 1.5 }, { note: 'G2', duration: 1.5 }, { note: 'C2', duration: 3.0 } ];
+        
+        // --- 初期化 ---
+        function init() { setTimeout(() => { document.getElementById('gameTitle').classList.add('fade-out'); }, 3000); scene = new THREE.Scene(); scene.fog = new THREE.Fog(0x87CEEB, 50, 200); camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000); renderer = new THREE.WebGLRenderer({ antialias: true }); renderer.setSize(window.innerWidth, window.innerHeight); renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap; renderer.setClearColor(0x87CEEB); document.getElementById('gameContainer').appendChild(renderer.domElement); setupLighting(); createPlayer(); generateInitialTerrain(); spawnSlimes(15); setupEventListeners(); lastPosition.copy(player.position); animate(); }
+
+        // --- オーディオ処理 ---
+        function initAudio() { if (audioContext) return; try { audioContext = new (window.AudioContext || window.webkitAudioContext)(); bgmGain = audioContext.createGain(); bgmGain.connect(audioContext.destination); bgmGain.gain.value = 0.15; sfxGain = audioContext.createGain(); sfxGain.connect(audioContext.destination); sfxGain.gain.value = 0.3; console.log("AudioContext is ready."); } catch (e) { console.error('Web Audio API is not supported.'); document.getElementById('audioControls').style.display = 'none'; } }
+        function playSfxTone(freq, duration) { if (!audioContext || !isSFXEnabled) return; const osc = audioContext.createOscillator(); const gain = audioContext.createGain(); osc.connect(gain); gain.connect(sfxGain); osc.type = 'triangle'; osc.frequency.setValueAtTime(freq, audioContext.currentTime); gain.gain.setValueAtTime(1.0, audioContext.currentTime); gain.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + duration); osc.start(audioContext.currentTime); osc.stop(audioContext.currentTime + duration); }
+        function playSlimeJoinSfx() { playSfxTone(659, 0.1); setTimeout(() => playSfxTone(784, 0.1), 100); setTimeout(() => playSfxTone(1047, 0.15), 200); }
+        function createAdvancedTone(frequency, duration, volume, waveType) { if (!audioContext || frequency === 0) return; const osc = audioContext.createOscillator(); const gain = audioContext.createGain(); const filter = audioContext.createBiquadFilter(); filter.type = 'lowpass'; filter.frequency.setValueAtTime(2800, audioContext.currentTime); osc.connect(filter); filter.connect(gain); gain.connect(bgmGain); osc.type = waveType; osc.frequency.setValueAtTime(frequency, audioContext.currentTime); gain.gain.setValueAtTime(0, audioContext.currentTime); gain.gain.linearRampToValueAtTime(volume, audioContext.currentTime + 0.03); gain.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + duration); osc.start(audioContext.currentTime); osc.stop(audioContext.currentTime + duration); bgmOscillators.push(osc); }
+        function startBGM() { if (!audioContext || isBGMPlaying) return; isBGMPlaying = true; document.getElementById('bgmBtn').textContent = '🎵 BGM OFF'; const tempo = 95; const noteTime = 60 / tempo; let melodyIndex = 0; const playMelody = () => { if (!isBGMPlaying) return; melodyIndex = melodyIndex >= originalMelody.length ? 0 : melodyIndex; const noteInfo = originalMelody[melodyIndex]; const duration = noteInfo.duration * noteTime; createAdvancedTone(notes[noteInfo.note], duration, 0.4, 'square'); melodyIndex++; melodyTimeoutId = setTimeout(playMelody, duration * 1000); }; let bassIndex = 0; const playBass = () => { if (!isBGMPlaying) return; bassIndex = bassIndex >= originalBassLine.length ? 0 : bassIndex; const noteInfo = originalBassLine[bassIndex]; const duration = noteInfo.duration * noteTime; createAdvancedTone(notes[noteInfo.note], duration, 0.2, 'sawtooth'); bassIndex++; bassTimeoutId = setTimeout(playBass, duration * 1000); }; playMelody(); playBass(); }
+        function stopBGM() { if (!isBGMPlaying) return; isBGMPlaying = false; document.getElementById('bgmBtn').textContent = '🎵 BGM ON'; clearTimeout(melodyTimeoutId); clearTimeout(bassTimeoutId); bgmOscillators.forEach(osc => { try { osc.stop(); } catch(e) {} }); bgmOscillators = []; }
+        function toggleBGM() { initAudio(); if (audioContext.state === 'suspended') audioContext.resume(); if (isBGMPlaying) stopBGM(); else startBGM(); }
+        function toggleSFX() { isSFXEnabled = !isSFXEnabled; document.getElementById('sfxBtn').textContent = isSFXEnabled ? '🔊 SFX OFF' : '🔊 SFX ON'; if(isSFXEnabled) playSfxTone(523, 0.1); }
+        
+        // --- オブジェクト作成 ---
+        function setupLighting() { scene.add(new THREE.AmbientLight(0x666666)); const sun = new THREE.DirectionalLight(0xffffff, 1.0); sun.position.set(50, 50, 20); sun.castShadow = true; sun.shadow.mapSize.width = 2048; sun.shadow.mapSize.height = 2048; sun.shadow.camera.near = 0.5; sun.shadow.camera.far = 200; sun.shadow.camera.left = -100; sun.shadow.camera.right = 100; sun.shadow.camera.top = 100; sun.shadow.camera.bottom = -100; scene.add(sun); }
+        function createPlayer() { const playerGroup = new THREE.Group(); const body = new THREE.Mesh(new THREE.BoxGeometry(0.8, 1.2, 0.4), new THREE.MeshLambertMaterial({ color: 0x8B4513 })); body.position.y = 0.6; body.castShadow = true; playerGroup.add(body); const head = new THREE.Mesh(new THREE.SphereGeometry(0.25), new THREE.MeshLambertMaterial({ color: 0xFFDBB6 })); head.position.y = 1.45; head.castShadow = true; playerGroup.add(head); const sword = new THREE.Mesh(new THREE.BoxGeometry(0.05, 1.0, 0.1), new THREE.MeshLambertMaterial({ color: 0xC0C0C0 })); sword.position.set(0.6, 0.8, 0); sword.rotation.z = -0.3; sword.castShadow = true; playerGroup.add(sword); const shield = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.05, 8), new THREE.MeshLambertMaterial({ color: 0x4169E1 })); shield.position.set(-0.5, 0.8, 0); shield.rotation.z = Math.PI / 2; shield.castShadow = true; playerGroup.add(shield); playerGroup.position.set(0, GROUND_Y, 0); scene.add(playerGroup); player = playerGroup; }
+        function generateInitialTerrain() { const groundGeo = new THREE.PlaneGeometry(300, 300, 60, 60); const groundMat = new THREE.MeshLambertMaterial({ color: 0x228B22 }); const vertices = groundGeo.attributes.position.array; for (let i = 0; i < vertices.length; i += 3) { vertices[i + 2] = Math.random() * 2 - 1; } groundGeo.computeVertexNormals(); const ground = new THREE.Mesh(groundGeo, groundMat); ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; scene.add(ground); for (let i = 0; i < 50; i++) createTree((Math.random() - 0.5) * 280, (Math.random() - 0.5) * 280); for (let i = 0; i < 15; i++) createPillar((Math.random() - 0.5) * 250, (Math.random() - 0.5) * 250); }
+        function createTree(x, z) { const tree = new THREE.Group(); const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.4, 4), new THREE.MeshLambertMaterial({ color: 0x8B4513 })); trunk.position.y = 2; trunk.castShadow = true; tree.add(trunk); const leaves = new THREE.Mesh(new THREE.SphereGeometry(2.5), new THREE.MeshLambertMaterial({ color: 0x006400 })); leaves.position.y = 5; leaves.castShadow = true; tree.add(leaves); tree.position.set(x, 0, z); scene.add(tree); }
+        function createPillar(x, z) { const h = 8 + Math.random() * 4; const pillar = new THREE.Mesh(new THREE.CylinderGeometry(0.8, 1.0, h), new THREE.MeshLambertMaterial({ color: 0x708090 })); pillar.position.set(x, h / 2, z); pillar.castShadow = true; pillar.receiveShadow = true; scene.add(pillar); }
+        function createSlime(x, z) { const slimeGroup = new THREE.Group(); const slimeGeometry = new THREE.SphereGeometry(1.0, 32, 24); slimeGeometry.scale(1, 0.8, 1); const slimeMaterial = new THREE.MeshLambertMaterial({ color: 0xF5F5F5 }); const slimeBody = new THREE.Mesh(slimeGeometry, slimeMaterial); slimeBody.position.y = 0.8; slimeBody.castShadow = true; slimeGroup.add(slimeBody); const rimGeometry = new THREE.TorusGeometry(0.9, 0.15, 8, 16); const rimMaterial = new THREE.MeshLambertMaterial({ color: 0x8B4513 }); const rim = new THREE.Mesh(rimGeometry, rimMaterial); rim.position.y = 0.1; rim.rotation.x = Math.PI / 2; rim.castShadow = true; slimeGroup.add(rim); const limbGeometry = new THREE.SphereGeometry(0.15, 12, 8); const limbMaterial = new THREE.MeshLambertMaterial({ color: 0xFFB6C1 }); const leftArm = new THREE.Mesh(limbGeometry, limbMaterial); leftArm.position.set(-0.8, 0.5, 0.4); leftArm.castShadow = true; slimeGroup.add(leftArm); const rightArm = new THREE.Mesh(limbGeometry, limbMaterial); rightArm.position.set(0.8, 0.5, 0.4); rightArm.castShadow = true; slimeGroup.add(rightArm); const leftFoot = new THREE.Mesh(limbGeometry, limbMaterial); leftFoot.position.set(-0.4, 0.2, 0.7); leftFoot.castShadow = true; slimeGroup.add(leftFoot); const rightFoot = new THREE.Mesh(limbGeometry, limbMaterial); rightFoot.position.set(0.4, 0.2, 0.7); rightFoot.castShadow = true; slimeGroup.add(rightFoot); const eyeGeometry = new THREE.SphereGeometry(0.08, 8, 6); const eyeMaterial = new THREE.MeshLambertMaterial({ color: 0x000000 }); const leftEye = new THREE.Mesh(eyeGeometry, eyeMaterial); leftEye.position.set(-0.25, 1.0, 0.85); slimeGroup.add(leftEye); const rightEye = new THREE.Mesh(eyeGeometry, eyeMaterial); rightEye.position.set(0.25, 1.0, 0.85); slimeGroup.add(rightEye); const mouthGeometry = new THREE.SphereGeometry(0.03, 6, 4); mouthGeometry.scale(2, 0.5, 1); const mouth = new THREE.Mesh(mouthGeometry, eyeMaterial); mouth.position.set(0, 0.8, 0.9); slimeGroup.add(mouth); const cheekGeometry = new THREE.SphereGeometry(0.12, 8, 6); const cheekMaterial = new THREE.MeshLambertMaterial({ color: 0xFFB6C1, transparent: true, opacity: 0.6 }); const leftCheek = new THREE.Mesh(cheekGeometry, cheekMaterial); leftCheek.position.set(-0.5, 0.85, 0.8); slimeGroup.add(leftCheek); const rightCheek = new THREE.Mesh(cheekGeometry, cheekMaterial); rightCheek.position.set(0.5, 0.85, 0.8); slimeGroup.add(rightCheek); slimeGroup.position.set(x, 0, z); slimeGroup.userData = { bounceTime: Math.random() * Math.PI * 2, moveSpeed: 0.02, isFollowing: false, originalY: 0, }; scene.add(slimeGroup); slimes.push(slimeGroup); }
+        function spawnSlimes(count) { for (let i = 0; i < count; i++) { const x = (Math.random() - 0.5) * 280; const z = (Math.random() - 0.5) * 280; createSlime(x, z); } }
+        
+        // --- イベントリスナー ---
+        function setupEventListeners() { document.addEventListener('keydown', (e) => keys[e.code] = true); document.addEventListener('keyup', (e) => keys[e.code] = false); let isMouseDown = false; renderer.domElement.addEventListener('mousedown', () => { isMouseDown = true; }); document.addEventListener('mouseup', () => { isMouseDown = false; }); document.addEventListener('mousemove', (e) => { if(isMouseDown) { cameraAngleY -= e.movementX * 0.005; cameraAngleX -= e.movementY * 0.005; cameraAngleX = Math.max(-Math.PI / 4, Math.min(Math.PI / 2, cameraAngleX)); } }); window.addEventListener('resize', () => { camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); }); document.getElementById('bgmBtn').addEventListener('click', toggleBGM); document.getElementById('sfxBtn').addEventListener('click', toggleSFX); }
+
+        // --- ★★★ ゲームループと更新処理 (ジャンプ機能追加) ★★★ ---
+        function updatePlayerAndCamera(delta) {
+            // ジャンプ処理
+            if (keys['Space'] && isPlayerOnGround) {
+                isPlayerOnGround = false;
+                playerVelocityY = JUMP_FORCE;
+            }
+            // 重力と垂直移動
+            if (!isPlayerOnGround) {
+                playerVelocityY += GRAVITY * delta;
+                player.position.y += playerVelocityY * delta;
+            }
+            // 接地判定
+            if (player.position.y <= GROUND_Y) {
+                player.position.y = GROUND_Y;
+                playerVelocityY = 0;
+                isPlayerOnGround = true;
+            }
+            
+            // 水平移動と回転
+            const speed = (keys['ShiftLeft'] || keys['ShiftRight']) ? 8.0 : 4.0;
+            const rotationSpeed = 2.0;
+            if (keys['KeyA'] || keys['ArrowLeft']) player.rotation.y += rotationSpeed * delta;
+            if (keys['KeyD'] || keys['ArrowRight']) player.rotation.y -= rotationSpeed * delta;
+            
+            const moveDirection = new THREE.Vector3();
+            if (keys['KeyW'] || keys['ArrowUp']) moveDirection.z = -1;
+            if (keys['KeyS'] || keys['ArrowDown']) moveDirection.z = 1;
+            
+            if (moveDirection.lengthSq() > 0) {
+                moveDirection.normalize().multiplyScalar(speed * delta);
+                moveDirection.applyQuaternion(player.quaternion);
+                player.position.add(moveDirection);
+            }
+            
+            // 探索距離の計算
+            totalDistance += player.position.distanceTo(lastPosition);
+            lastPosition.copy(player.position);
+
+            // カメラ追従
+            const cameraOffset = new THREE.Vector3(cameraDistance * Math.sin(cameraAngleY), cameraDistance * Math.sin(cameraAngleX), cameraDistance * Math.cos(cameraAngleY));
+            camera.position.copy(player.position).add(cameraOffset);
+            camera.lookAt(player.position.clone().add(new THREE.Vector3(0, 1, 0)));
+        }
+        function updateSlimes() { slimes.forEach(slime => { slime.userData.bounceTime += 0.08; slime.position.y = slime.userData.originalY + Math.sin(slime.userData.bounceTime) * 0.15; const body = slime.children[0]; body.scale.y = 0.8 + Math.sin(slime.userData.bounceTime * 1.5) * 0.05; const limbBounce = Math.sin(slime.userData.bounceTime * 2) * 0.1; if (slime.children[2]) slime.children[2].position.y = 0.5 + limbBounce; if (slime.children[3]) slime.children[3].position.y = 0.5 - limbBounce; if (!slime.userData.isFollowing) { const distanceToPlayer = slime.position.distanceTo(player.position); if (distanceToPlayer < 15 && distanceToPlayer > 2.5) { const direction = player.position.clone().sub(slime.position).normalize(); slime.position.add(direction.multiplyScalar(slime.userData.moveSpeed)); const targetRotation = Math.atan2(direction.x, direction.z); slime.rotation.y += (targetRotation - slime.rotation.y) * 0.1; } } }); }
+        function updateFollowingSlimes() { followingSlimes.forEach((slime, index) => { let target = (index === 0) ? player : followingSlimes[index - 1]; const distanceToTarget = slime.position.distanceTo(target.position); if (distanceToTarget > 3.5) { const direction = target.position.clone().sub(slime.position).normalize(); const moveSpeed = Math.min(0.1, distanceToTarget * 0.05); slime.position.add(direction.multiplyScalar(moveSpeed)); const targetRotation = Math.atan2(direction.x, direction.z); slime.rotation.y += (targetRotation - slime.rotation.y) * 0.1; } }); }
+        function checkSlimeCollisions() { slimes.forEach(slime => { if (slime.userData.isFollowing) return; if (player.position.distanceTo(slime.position) < 2.5) { slime.userData.isFollowing = true; followingSlimes.push(slime); slime.children[0].material.color.setHex(0xE6F3FF); playSlimeJoinSfx(); } }); }
+        function updateStats() { document.getElementById('position').textContent = `${player.position.x.toFixed(1)}, ${player.position.y.toFixed(1)}, ${player.position.z.toFixed(1)}`; document.getElementById('totalSlimes').textContent = slimes.length; document.getElementById('followingSlimes').textContent = followingSlimes.length; document.getElementById('distance').textContent = totalDistance.toFixed(1); }
+        function animate() { requestAnimationFrame(animate); const delta = clock.getDelta(); updatePlayerAndCamera(delta); checkSlimeCollisions(); updateFollowingSlimes(); updateSlimes(); updateStats(); renderer.render(scene, camera); }
+        init();
+    </script>
+</body>
+</html>
