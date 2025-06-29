@@ -15,6 +15,81 @@
         #audioControls { position: absolute; bottom: 20px; left: 20px; z-index: 100; }
         #audioControls button { background: rgba(0, 0, 0, 0.8); color: white; border: 2px solid #FFD700; padding: 10px 15px; border-radius: 5px; cursor: pointer; font-size: 14px; margin-right: 10px; }
         #audioControls button:hover { background: rgba(255, 215, 0, 0.2); }
+        /* 仮想パッド用スタイル */
+        #virtualPad {
+            position: absolute;
+            left: 0; right: 0; bottom: 0;
+            width: 100vw;
+            height: 40vh;
+            pointer-events: none;
+            z-index: 300;
+        }
+        .pad-area {
+            position: absolute;
+            pointer-events: auto;
+            user-select: none;
+        }
+        #movePad {
+            left: 2vw;
+            bottom: 2vh;
+            width: 140px;
+            height: 140px;
+        }
+        #actionPad {
+            right: 2vw;
+            bottom: 2vh;
+            width: 140px;
+            height: 140px;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            justify-content: flex-end;
+        }
+        .pad-btn {
+            background: rgba(0,0,0,0.6);
+            color: #FFD700;
+            border: 2px solid #FFD700;
+            border-radius: 50%;
+            width: 56px;
+            height: 56px;
+            font-size: 22px;
+            margin: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+            touch-action: none;
+        }
+        .pad-btn:active {
+            background: rgba(255,215,0,0.3);
+        }
+        /* 十字キー配置 */
+        .dpad {
+            position: absolute;
+            width: 140px;
+            height: 140px;
+        }
+        .dpad-up { left: 42px; top: 0; }
+        .dpad-down { left: 42px; top: 84px; }
+        .dpad-left { left: 0; top: 42px; }
+        .dpad-right { left: 84px; top: 42px; }
+        @media (min-width: 800px) {
+            #virtualPad { display: none; }
+        }
+        /* 回転ボタンの追加スタイル */
+        #btnTurnLeft, #btnTurnRight {
+            font-size: 28px;
+            background: rgba(0,0,0,0.7);
+            color: #FFD700;
+            border: 2px solid #FFD700;
+            border-radius: 50%;
+            width: 48px;
+            height: 48px;
+            margin: 4px;
+        }
+        #btnTurnLeft:active, #btnTurnRight:active {
+            background: rgba(255,215,0,0.3);
+        }
     </style>
 </head>
 <body>
@@ -41,6 +116,23 @@
         <div id="audioControls">
             <button id="bgmBtn">🎵 BGM ON</button>
             <button id="sfxBtn">🔊 SFX ON</button>
+        </div>
+    </div>
+    <!-- 仮想パッド -->
+    <div id="virtualPad">
+        <div id="movePad" class="pad-area">
+            <button class="pad-btn dpad dpad-up"    id="btnUp">▲</button>
+            <button class="pad-btn dpad dpad-down"  id="btnDown">▼</button>
+            <button class="pad-btn dpad dpad-left"  id="btnLeft">◀</button>
+            <button class="pad-btn dpad dpad-right" id="btnRight">▶</button>
+        </div>
+        <div id="actionPad" class="pad-area">
+            <button class="pad-btn" id="btnShift">ダッシュ</button>
+            <button class="pad-btn" id="btnSpace">ジャンプ</button>
+            <div style="display:flex; flex-direction:row; margin-top:8px;">
+                <button class="pad-btn" id="btnTurnLeft">↺</button>
+                <button class="pad-btn" id="btnTurnRight">↻</button>
+            </div>
         </div>
     </div>
 
@@ -97,7 +189,66 @@
         function spawnSlimes(count) { for (let i = 0; i < count; i++) { const x = (Math.random() - 0.5) * 280; const z = (Math.random() - 0.5) * 280; createSlime(x, z); } }
         
         // --- イベントリスナー ---
-        function setupEventListeners() { document.addEventListener('keydown', (e) => keys[e.code] = true); document.addEventListener('keyup', (e) => keys[e.code] = false); let isMouseDown = false; renderer.domElement.addEventListener('mousedown', () => { isMouseDown = true; }); document.addEventListener('mouseup', () => { isMouseDown = false; }); document.addEventListener('mousemove', (e) => { if(isMouseDown) { cameraAngleY -= e.movementX * 0.005; cameraAngleX -= e.movementY * 0.005; cameraAngleX = Math.max(-Math.PI / 4, Math.min(Math.PI / 2, cameraAngleX)); } }); window.addEventListener('resize', () => { camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); }); document.getElementById('bgmBtn').addEventListener('click', toggleBGM); document.getElementById('sfxBtn').addEventListener('click', toggleSFX); }
+        function setupEventListeners() { 
+            document.addEventListener('keydown', (e) => keys[e.code] = true); 
+            document.addEventListener('keyup', (e) => keys[e.code] = false); 
+            let isMouseDown = false; 
+            renderer.domElement.addEventListener('mousedown', () => { isMouseDown = true; }); 
+            document.addEventListener('mouseup', () => { isMouseDown = false; }); 
+            document.addEventListener('mousemove', (e) => { if(isMouseDown) { cameraAngleY -= e.movementX * 0.005; cameraAngleX -= e.movementY * 0.005; cameraAngleX = Math.max(-Math.PI / 4, Math.min(Math.PI / 2, cameraAngleX)); } }); 
+            window.addEventListener('resize', () => { camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); }); 
+            document.getElementById('bgmBtn').addEventListener('click', toggleBGM); 
+            document.getElementById('sfxBtn').addEventListener('click', toggleSFX); 
+            // --- 仮想パッドイベント ---
+            function padPress(code) { keys[code] = true; }
+            function padRelease(code) { keys[code] = false; }
+            // 十字キー
+            const padMap = [
+                {id: 'btnUp',    code: 'ArrowUp'},
+                {id: 'btnDown',  code: 'ArrowDown'},
+                {id: 'btnLeft',  code: 'ArrowLeft'},
+                {id: 'btnRight', code: 'ArrowRight'},
+                {id: 'btnShift', code: 'ShiftLeft'},
+                {id: 'btnSpace', code: 'Space'},
+                {id: 'btnTurnLeft', code: 'KeyA'},
+                {id: 'btnTurnRight', code: 'KeyD'},
+            ];
+            padMap.forEach(({id, code}) => {
+                const btn = document.getElementById(id);
+                if (!btn) return;
+                // タッチ
+                btn.addEventListener('touchstart', e => { e.preventDefault(); padPress(code); });
+                btn.addEventListener('touchend',   e => { e.preventDefault(); padRelease(code); });
+                btn.addEventListener('touchcancel',e => { e.preventDefault(); padRelease(code); });
+                // マウス（PCでも動作）
+                btn.addEventListener('mousedown',  e => { e.preventDefault(); padPress(code); });
+                btn.addEventListener('mouseup',    e => { e.preventDefault(); padRelease(code); });
+                btn.addEventListener('mouseleave',  e => { e.preventDefault(); padRelease(code); });
+            });
+            // --- スマホスワイプでカメラ操作 ---
+            let lastTouchX = null, lastTouchY = null;
+            // 画面右半分のみカメラ操作有効
+            renderer.domElement.addEventListener('touchstart', e => {
+                if (e.touches.length === 1 && e.touches[0].clientX > window.innerWidth/2) {
+                    lastTouchX = e.touches[0].clientX;
+                    lastTouchY = e.touches[0].clientY;
+                }
+            });
+            renderer.domElement.addEventListener('touchmove', e => {
+                if (e.touches.length === 1 && lastTouchX !== null) {
+                    const dx = e.touches[0].clientX - lastTouchX;
+                    const dy = e.touches[0].clientY - lastTouchY;
+                    cameraAngleY -= dx * 0.005;
+                    cameraAngleX -= dy * 0.005;
+                    cameraAngleX = Math.max(-Math.PI / 4, Math.min(Math.PI / 2, cameraAngleX));
+                    lastTouchX = e.touches[0].clientX;
+                    lastTouchY = e.touches[0].clientY;
+                }
+            });
+            renderer.domElement.addEventListener('touchend', e => {
+                lastTouchX = null; lastTouchY = null;
+            });
+        }
 
         // --- ★★★ ゲームループと更新処理 (ジャンプ機能追加) ★★★ ---
         function updatePlayerAndCamera(delta) {
