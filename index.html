@@ -130,6 +130,27 @@
                 margin-bottom: 0;
             }
         }
+        #eventMessage {
+            position: fixed;
+            top: 40%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 1000;
+            font-size: 2.5rem;
+            color: #FFD700;
+            background: rgba(0,0,0,0.85);
+            padding: 32px 48px;
+            border-radius: 24px;
+            border: 3px solid #FFD700;
+            text-align: center;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.5s;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+        }
+        #eventMessage.show {
+            opacity: 1;
+        }
     </style>
 </head>
 <body>
@@ -178,6 +199,8 @@
             </div>
         </div>
     </div>
+    <!-- イベントメッセージ表示用 -->
+    <div id="eventMessage"></div>
 
     <script>
         // --- オーディオ関連の変数 ---
@@ -449,18 +472,24 @@
             followingSlimes.forEach((slime, index) => { let target = (index === 0) ? player : followingSlimes[index - 1]; const distanceToTarget = slime.position.distanceTo(target.position); if (distanceToTarget > 3.5) { const direction = target.position.clone().sub(slime.position).normalize(); const moveSpeed = Math.min(0.1, distanceToTarget * 0.05); slime.position.add(direction.multiplyScalar(moveSpeed)); const targetRotation = Math.atan2(direction.x, direction.z); slime.rotation.y += (targetRotation - slime.rotation.y) * 0.1; } }); 
             // 5体でファンファーレ
             if (followingSlimes.length >= 5 && !fanfarePlayed) {
+                showEventMessage('5体連なった！スピード＆BGMアップ！');
+                console.log('5体到達: ファンファーレ発火');
                 playFanfare();
                 fanfarePlayed = true;
                 bgmTempo = 120; // 5体でBGM速く
             }
             // 10体で花火
             if (followingSlimes.length >= 10 && !fireworksPlayed) {
+                showEventMessage('10体連なった！王冠ゲット＆花火！！');
+                console.log('10体到達: 花火発火');
                 launchFireworks();
                 fireworksPlayed = true;
                 bgmTempo = 145; // 10体でさらに速く
             }
             // 10体で王冠
             if (followingSlimes.length >= 10 && !crownAdded) {
+                showEventMessage('最速モード突入！');
+                console.log('10体到達: 王冠発火');
                 addCrownToHero();
                 crownAdded = true;
             }
@@ -561,6 +590,16 @@
             }
             crownGroup.position.set(0, 0.25, 0); // 頭の上に（全体をさらに下げる）
             head.add(crownGroup);
+        }
+
+        // イベントメッセージ表示関数
+        function showEventMessage(msg, duration = 2200) {
+            const el = document.getElementById('eventMessage');
+            el.textContent = msg;
+            el.classList.add('show');
+            setTimeout(() => {
+                el.classList.remove('show');
+            }, duration);
         }
     </script>
 </body>
