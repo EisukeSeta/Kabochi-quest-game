@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>かぼちクエストⅠ - ジャンプの章</title>
+    <title>もっちクエストⅠ - ジャンプの章</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <style>
         body { margin: 0; padding: 0; overflow: hidden; background: #000; font-family: 'Meiryo', 'MS PGothic', sans-serif; }
@@ -116,7 +116,7 @@
 </head>
 <body>
     <div id="gameContainer">
-        <div id="gameTitle">かぼちクエストⅠ</div>
+        <div id="gameTitle">もっちクエストⅠ</div>
         <button id="instructionsToggleBtn">？</button>
         <div id="instructions">
             <strong>🗡️ 操作方法</strong><br>
@@ -163,9 +163,21 @@
         // --- オーディオ関連の変数 ---
         let audioContext;
         let bgmGain, sfxGain;
-        let isBGMPlaying = false, isSFXEnabled = true;
+        let isBGMPlaying = false, isSFXEnabled = false;
         let melodyTimeoutId, bassTimeoutId;
         let bgmOscillators = [];
+        // 初回ユーザー操作でBGM自動開始
+        let bgmStarted = false;
+        function tryStartBGM() {
+            if (!bgmStarted) {
+                toggleBGM();
+                toggleSFX();
+                bgmStarted = true;
+            }
+        }
+        window.addEventListener('touchstart', tryStartBGM, { once: true });
+        window.addEventListener('mousedown', tryStartBGM, { once: true });
+        window.addEventListener('keydown', tryStartBGM, { once: true });
 
         // --- ゲーム関連の変数 ---
         let scene, camera, renderer, player;
